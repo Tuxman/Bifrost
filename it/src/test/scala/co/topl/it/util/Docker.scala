@@ -1,11 +1,13 @@
 package co.topl.it.util
 
-import java.util.UUID
+import akka.actor.ActorSystem
 
+import java.util.UUID
 import co.topl.settings.AppSettings
 import co.topl.utils.Logging
 import co.topl.settings.AppSettings
 import com.spotify.docker.client.DefaultDockerClient
+import com.spotify.docker.client.DockerClient.ListImagesParam
 import com.spotify.docker.client.messages.{Container, ContainerConfig}
 import com.typesafe.config.{Config, ConfigFactory}
 import org.asynchttpclient.Dsl.{asyncHttpClient, config}
@@ -14,8 +16,8 @@ import scala.concurrent.{Await, ExecutionContext, Future}
 import scala.concurrent.duration.DurationInt
 import scala.jdk.CollectionConverters.asScalaBufferConverter
 import scala.util.control.NonFatal
-
-class Docker()(implicit ec: ExecutionContext) extends AutoCloseable with Logging {
+import scala.collection.JavaConverters._
+class Docker()(implicit ec: ExecutionContext, system: ActorSystem) extends AutoCloseable with Logging {
 
   private val http = asyncHttpClient(
     config()
@@ -27,7 +29,7 @@ class Docker()(implicit ec: ExecutionContext) extends AutoCloseable with Logging
       .setRequestTimeout(10000)
   )
 
-  private val client = DefaultDockerClient.fromEnv().build()
+  private implicit val client: DefaultDockerClient = DefaultDockerClient.fromEnv().build()
   private def uuidShort: String = UUID.randomUUID().hashCode().toHexString
   private val networkName = Docker.networkNamePrefix + uuidShort
 
@@ -48,15 +50,18 @@ class Docker()(implicit ec: ExecutionContext) extends AutoCloseable with Logging
   }
 
   private def startNode(nodeConfig: Config): Node = {
-    try {
-      val settings = buildAppSettings(nodeConfig)
-      val containerConfig: ContainerConfig = buildContainerConfig(settings)
-      val containerName: String = networkName + "-" + settings.network.nodeName
-      val containerId: String = client.createContainer(containerConfig, containerName).id
-      Node(settings, containerId, 9084, 9085)
-    } catch {
-      case NonFatal(e) => throw e
+    val settings = buildAppSettings(nodeConfig)
+    val containerConfig: ContainerConfig = buildContainerConfig(settings)
+    val containerName: String = networkName + "-" + settings.network.nodeName
+    val imageName =
+      Docker.bifrostImage.split('/').last
+    if(client.listImages(ListImagesParam.byName(imageName)).asScala.isEmpty) {
+      log.debug(s"${Docker.bifrostImage} does not exist locally.  Pulling.")
+      client.pull(Docker.bifrostImage)
     }
+    val containerId: String = client.createContainer(containerConfig, containerName).id
+    client.startContainer(containerId)
+    Node(settings, containerId, 9084, 9085)
   }
 
   def waitForStartup(nodes: List[Node]): Future[List[Node]] =
@@ -71,14 +76,10 @@ class Docker()(implicit ec: ExecutionContext) extends AutoCloseable with Logging
   }
 
   private def buildContainerConfig(settings: AppSettings): ContainerConfig = {
-
-    val shellCmd = "echo Options: $OPTS; java $OPTS -jar /usr/src/bifrost/bifrost.jar"
-
     ContainerConfig
       .builder()
       .image(Docker.bifrostImage)
       .exposedPorts(settings.network.bindAddress.getPort.toString, settings.rpcApi.bindAddress.getPort.toString)
-      .entrypoint("sh", "-c", shellCmd)
       .build()
   }
 
@@ -100,6 +101,6 @@ class Docker()(implicit ec: ExecutionContext) extends AutoCloseable with Logging
 
 object Docker {
 
-  val bifrostImage: String = "toplprotocol/bifrost:latest"
+  val bifrostImage: String = "bifrost:1.3.4"
   val networkNamePrefix: String = "bifrost-it"
 }

@@ -1,7 +1,8 @@
 package co.topl.it
 
-import java.util.concurrent.Executors
+import akka.actor.ActorSystem
 
+import java.util.concurrent.Executors
 import co.topl.it.util.Docker
 import co.topl.utils.Logging
 import org.scalatest.{BeforeAndAfterAll, Suite}
@@ -14,8 +15,9 @@ trait IntegrationSuite
     with BeforeAndAfterAll
     with Logging { this: Suite =>
 
-  implicit val defaultExecutionContext: ExecutionContext =
-    ExecutionContext.fromExecutor(Executors.newFixedThreadPool(10))
+  implicit val system: ActorSystem = ActorSystem("TestSuite")
+
+  import system.dispatcher
 
   protected val localDataDir: String = s"/tmp/bifrost/it-${Random.nextInt(Int.MaxValue)}"
 
