@@ -4,12 +4,15 @@ import sbtrelease.ReleasePlugin.autoImport.ReleaseTransformations._
 
 val scala212 = "2.12.13"
 val scala213 = "2.13.4"
+val GraalVM8 = "graalvm-ce-java8@20.2.0"
+
+organization in ThisBuild := "co.topl"
+ThisBuild / githubWorkflowJavaVersions := Seq(GraalVM8)
+ThisBuild / scalaVersion := scala212
+ThisBuild / crossScalaVersions := Seq(scala212, scala213)
 
 lazy val commonSettings = Seq(
-  organization := "co.topl",
   version := "1.3.4",
-  scalaVersion := scala212,
-  crossScalaVersions := Seq(scala212, scala213),
   semanticdbEnabled := true, // enable SemanticDB for Scalafix
   semanticdbVersion := scalafixSemanticdb.revision, // use Scalafix compatible version
   // wartremoverErrors := Warts.unsafe // settings for wartremover
